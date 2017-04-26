@@ -1,0 +1,27 @@
+{
+  "name": "coffee",
+  "version": "1.0.0",
+  "description": "Simple coffee server",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "dependencies": {
+    "body-parser": "^1.17.1",
+    "express": "^4.15.2",
+    "fs": "0.0.1-security",
+    "supertest": "^3.0.0",
+    "tape": "^4.6.3",
+    "tap-spec": "^4.1.1"
+  },
+  "scripts": {
+    "start": "node index",
+    "test": "node test | tap-spec"
+  },
+  "keywords": [],
+  "author": "Connor Johnson",
+  "license": "ISC",
+  "devDependencies": {
+    "fs": "0.0.1-security"
+  }
+}
