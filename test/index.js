@@ -8,8 +8,8 @@ test("Test POST /api/create", function(t) {
     var newShop = { 
         name:      "The Cracked Mug", 
         address:   "107 S Mary Ave", 
-        latitude:  "37.3821935", 
-        longitude: "-122.0454545a" };
+        latitude:  37.3821935, 
+        longitude: -122.0454545 };
     request(app)
         .post("/api/create")
         .send( newShop )
@@ -27,11 +27,11 @@ test("Test POST /api/create", function(t) {
 test("Test GET /api/read", function(t) {
     request(app)
         .get("/api/read")
-        .query({"id":"33"})
+        .query({"id":33})
         .expect(200)
         .end(function(err, res) {
             t.error( err, "No error" );
-            t.same( res.body.id, "33", "Read coffeehouse id" );
+            t.same( res.body.id, 33, "Read coffeehouse id" );
             t.same( res.body.name, "Blue Bottle Coffee", "Read coffeehouse name" );
             t.end();
         });
@@ -39,11 +39,11 @@ test("Test GET /api/read", function(t) {
 
 test("Test PUT /api/update", function(t) {
     var newShop = {
-        id:        "33",
+        id:        33,
         name:      "The Dusty Cup",
         address:   "2805 Sacramento St",
-        latitude:  "37.7891594",
-        longitude: "-122.43930169" };
+        latitude:  37.7891594,
+        longitude: -122.43930169 };
     request(app)
         .put("/api/update")
         .send( newShop )
@@ -57,10 +57,23 @@ test("Test PUT /api/update", function(t) {
 test("Test DELETE /api/delete", function(t) {
     request(app)
         .delete("/api/delete")
-        .send( {id:"33"} )
+        .send( {id:33} )
         .expect(200)
         .end(function(err, res) {
             t.error( err, "No error" );
+            t.end();
+        });
+});
+
+test("Test GET /api/nearest", function(t) {
+    request(app)
+        .get("/api/nearest")
+        .send( {address: "107 S Mary Ave, Sunnyvale, CA"} )
+        .expect(200)
+        .end(function(err, res) {
+            t.error( err, "No error" );
+            console.log(res.body);
+            t.same(res.body.name, "The Cracked Mug", "Found my fake coffee shop");
             t.end();
         });
 });
