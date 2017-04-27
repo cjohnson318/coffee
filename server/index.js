@@ -1,105 +1,148 @@
 "use strict";
 
-var fs = require("fs");
-var coffeeShops = {};
-var maxIndex = 0;
-
-var express    = require("express");
-var bodyParser = require('body-parser');
+var mongo       = require("mongodb");
+var MongoClient = mongo.MongoClient;
+var url         = "mongodb://localhost:27017/test";
+var monk        = require("monk");
+var db          = monk(url);
+var request     = require("request");
+var GoogleMapsAPI = require("googlemaps");
+var express     = require("express");
+var bodyParser  = require('body-parser');
 
 var app = express();
 app.use(bodyParser.json()); // for parsing application/json
 
-var data = fs.readFileSync( "data/locations.csv", "utf8") 
-data = data.split(/\r?\n/);
-for (var i in data) {
-    const record = data[i].split(/,\s/);
-    const id = record[0];
-    const intId = parseInt( id );
-    if (intId > maxIndex) {
-        maxIndex = intId;
-    }
-    var info = {
-        name:      record[1],
-        address:   record[2],
-        latitude:  record[3],
-        longitude: record[4] };
-    coffeeShops[id] = info;
-}
+app.use(function(req, res, next){
+    req.db = db;
+    next();
+});
+
+var addLocationTo = function( record ) {
+    record.location = {
+        type: "Point",
+        coordinates: [ record.longitude, record.latitude ]
+    };
+    return record;
+};
 
 app.post("/api/create", function( req, res ) {
-    var name      = req.body.name;
-    var address   = req.body.address;
-    var latitude  = req.body.latitude;
-    var longitude = req.body.longitude;   
-    maxIndex += 1;
-    var newShop = {
-        id: maxIndex.toString(),
-        name: name,
-        address: address,
-        latitude: latitude,
-        longitude: longitude };
-    coffeeShops[maxIndex.toString()] = newShop;
-    // return id of new coffee shop
-    res.status(200).json( newShop );
+    var db = req.db;
+    var collection = db.get("coffee");
+    collection.find({}, {sort:{id:-1},limit:1}).then((doc) => {
+        var result = doc[0];
+        var record = {
+            id        : result.id + 1,
+            name      : req.body.name,
+            address   : req.body.address,
+            latitude  : parseFloat(req.body.latitude),
+            longitude : parseFloat(req.body.longitude) };
+        record = addLocationTo( record );
+        collection.insert( record ).then((doc) => {
+            res.status(200).json( record );
+        }).catch((err) => {
+            res.status(500).json({});
+        });
+    }).catch((err) => {
+        res.status(500).json({});
+    });
 });
 
 app.get("/api/read", function( req, res ) {
-    var id = req.query.id;
-    if (!(id in coffeeShops)) {
-        res.status(404);
-        return;
-    } 
-    var resp = {
-        "id"       : id,
-        "name"     : coffeeShops[id].name,
-        "address"  : coffeeShops[id].address,
-        "latitude" : coffeeShops[id].latitude,
-        "longitude": coffeeShops[id].longitude
-    };
-    // return address for id, or error
-    res.status(200).json(resp);
+    var id = parseInt(req.query.id);
+    var db = req.db;
+    var collection = db.get("coffee");
+    collection.find({id:id}, {limit:1}).then((doc) => {
+        var result = doc[0];
+        res.status(200).json(result);
+    }).catch((err) => {
+        res.status(404).json({});
+    });
 });
 
 app.put("/api/update", function( req, res ) {
-    var id        = req.body.id;
-    var name      = req.body.name;
-    var address   = req.body.address;
-    var latitude  = req.body.latitude;
-    var longitude = req.body.longitude;
-    // return 200 OK
-    if (id in coffeeShops) {
-        res.status(200).json({});
-    }
-    // return error if not found
-    else {
+    var id = parseInt(req.body.id);
+    var record = {
+        id        : id,
+        name      : req.body.name,
+        address   : req.body.address,
+        latitude  : parseFloat(req.body.latitude),
+        longitude : parseFloat(req.body.longitude) };
+    record = addLocationTo( record );
+    var db = req.db;
+    var collection = db.get("coffee");
+    collection.find({id:id}).then((doc) => {
+        var result = doc[0];
+        collection.update(result, record).then((doc) => {
+            res.status(200).json({});
+        }).catch((err) => {
+            res.status(404).json({}); 
+        });
+    }).catch((err) => {
         res.status(404).json({});
-    }
+    });
 });
 
 app.delete("/api/delete", function( req, res ) {
-    var id        = req.body.id;
-    if (id in coffeeShops) {
-        delete coffeeShops[id];
-        if (maxIndex > 0) {
-            maxIndex -= 1;
-        }
-        res.status(200).json({});
-    }
-    // return error if not found
-    else {
+    var id = parseInt(req.body.id);
+    var db = req.db;
+    var collection = db.get("coffee");
+    collection.find({id:id}).then((doc) => {
+        var result = doc[0];
+        collection.remove( result ).then((doc) => {
+            res.status(200).json({});
+        }).catch(() => {
+            res.status(404).json({});
+        });
+    }).catch((err) => {
         res.status(404).json({});
-    }
+    });
 });
 
-app.get("/api/findNearest", function( req, res ) {
-    var address   = req.body.address;
-    // return address of nearest coffee shop
-    //   interleave latitude and longitude coordinates
-    //   and store them in a sorted array so that we can
-    //   find sort-of near locations with a binary search,
-    //   O(lg n) for the win
-    res.status(200).json({});
+app.get("/api/nearest", function( req, res ) {
+    var address = req.body.address;
+    var key = "AIzaSyAYkoES0kWQfxii3a7GL_tJa0Rn7h-DRf0";
+    var form = { form: { address: address, key: key } };
+    var publicConfig = {
+        key: key,
+        stagger_time:       1000, // for elevationPath
+        encode_polylines:   false,
+        secure:             true, // use https
+    };
+    var gmAPI = new GoogleMapsAPI(publicConfig);
+    // geocode API
+    var geocodeParams = {
+        address: address,
+    };
+    gmAPI.geocode(geocodeParams, function(err, result) {
+        // parse the geocoded data from Google
+        var result = result.results[0];
+        var lng = result.geometry.location.lng;
+        var lat = result.geometry.location.lat;
+        // feed lng/lat into mongodb query
+        MongoClient.connect( url, function(err, mdb) {
+            if (err) { console.log(err); }
+            var collection = mdb.collection("coffee");
+            var query = { location: { 
+                            $nearSphere: { 
+                                $geometry: { 
+                                    type: "Point", 
+                                    coordinates: [ lng, lat ] 
+                                },
+                            } 
+                        } 
+                    };
+            collection.find( query ).limit(1).toArray(function(err,doc) {
+                if (err) {
+                    res.status(404).json({});
+                }
+                else {
+                    res.status(200).json(doc[0]);
+                    mdb.close();
+                }
+            });
+        });
+    });
 });
 
 /*
@@ -108,5 +151,4 @@ var server = app.listen(3000, function() {
     console.log("Example app listening at %s", port);
 });
 */
-
 module.exports = app;
